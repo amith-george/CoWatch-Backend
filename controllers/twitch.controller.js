@@ -1,3 +1,5 @@
+// controllers/twitch.controller.js
+
 const axios = require('axios');
 
 // Extracts the channel name from a Twitch URL
@@ -6,7 +8,6 @@ function extractChannelName(url) {
   const match = url.match(regex);
   return match ? match[1] : null;
 }
-
 
 // Helper function to get a fresh access token
 const getAccessToken = async () => {
@@ -33,21 +34,12 @@ exports.getMetadata = async (req, res) => {
       return res.status(400).json({ message: 'Invalid Twitch URL format.' });
     }
 
-    const { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } = process.env;
-    if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
-      throw new Error('Twitch API credentials are not configured in .env file.');
-    }
+    const accessToken = await getAccessToken();
 
-    // Step 1: Get an App Access Token from Twitch
-    const authUrl = `https://id.twitch.tv/oauth2/token?client_id=${TWITCH_CLIENT_ID}&client_secret=${TWITCH_CLIENT_SECRET}&grant_type=client_credentials`;
-    const { data: authData } = await axios.post(authUrl);
-    const accessToken = authData.access_token;
-
-    // Step 2: Fetch stream data using the access token
     const apiUrl = `https://api.twitch.tv/helix/streams?user_login=${channelName}`;
     const { data: streamData } = await axios.get(apiUrl, {
       headers: {
-        'Client-ID': TWITCH_CLIENT_ID,
+        'Client-ID': process.env.TWITCH_CLIENT_ID,
         'Authorization': `Bearer ${accessToken}`,
       },
     });
@@ -59,7 +51,7 @@ exports.getMetadata = async (req, res) => {
        const userApiUrl = `https://api.twitch.tv/helix/users?login=${channelName}`;
        const { data: userData } = await axios.get(userApiUrl, {
          headers: {
-            'Client-ID': TWITCH_CLIENT_ID,
+            'Client-ID': process.env.TWITCH_CLIENT_ID,
             'Authorization': `Bearer ${accessToken}`,
          },
        });
@@ -89,20 +81,23 @@ exports.getMetadata = async (req, res) => {
     res.status(200).json(formattedMetadata);
 
   } catch (error) {
-    console.error('Error fetching Twitch metadata:', error.response ? error.response.data : error.message);
+    console.error('Error fetching Twitch metadata:', error.message);
+    
+    // Check for 403 Forbidden error
+    if (error.response && error.response.status === 403) {
+      return res.status(403).json({ message: 'Request blocked. Your network may be preventing access to the Twitch API.' });
+    }
+    // Generic error for all other cases
     res.status(500).json({ message: 'Failed to fetch Twitch metadata.' });
   }
 };
 
 
-/**
- * ✨ NEW FUNCTION
- * Fetches the most popular live streams from Twitch.
- */
+// Fetches the most popular live streams from Twitch.
 exports.getPopularStreams = async (req, res) => {
     try {
       const accessToken = await getAccessToken();
-      const apiUrl = `https://api.twitch.tv/helix/streams?first=20`; // Get top 20 live streams
+      const apiUrl = `https://api.twitch.tv/helix/streams?first=20`;
   
       const { data } = await axios.get(apiUrl, {
         headers: {
@@ -122,16 +117,19 @@ exports.getPopularStreams = async (req, res) => {
       res.status(200).json(formattedStreams);
     } catch (error) {
       console.error('Error fetching popular Twitch streams:', error.message);
+
+      // Check for 403 Forbidden error
+      if (error.response && error.response.status === 403) {
+        return res.status(403).json({ message: 'Request blocked. Your network may be preventing access to the Twitch API.' });
+      }
+      // Generic error for all other cases
       res.status(500).json({ message: 'Failed to fetch popular Twitch streams.' });
     }
   };
   
   
-  /**
-   * ✨ NEW FUNCTION
-   * Searches for Twitch channels based on a query.
-   */
-  exports.searchChannels = async (req, res) => {
+// Searches for Twitch channels based on a query.
+exports.searchChannels = async (req, res) => {
     try {
       const { q: query } = req.query;
       if (!query) return res.status(400).json({ message: 'A search query is required.' });
@@ -157,7 +155,12 @@ exports.getPopularStreams = async (req, res) => {
       res.status(200).json(formattedChannels);
     } catch (error) {
       console.error('Error searching Twitch channels:', error.message);
+
+      // Check for 403 Forbidden error
+      if (error.response && error.response.status === 403) {
+        return res.status(403).json({ message: 'Request blocked. Your network may be preventing access to the Twitch API.' });
+      }
+      // Generic error for all other cases
       res.status(500).json({ message: 'Failed to search Twitch channels.' });
     }
   };
-  

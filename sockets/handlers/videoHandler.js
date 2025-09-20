@@ -1,3 +1,5 @@
+// src/server/videoHandler.js
+
 const Room = require('../../models/room.model');
 const { isUserInControl } = require('../roomManager');
 
@@ -7,7 +9,9 @@ const roomStates = {};
 module.exports = (io, socket, rooms) => {
   const changeVideo = async ({ roomId, videoUrl }) => {
     try {
+      console.log('Server: changeVideo', { roomId, videoUrl }); // Debug log
       if (!isUserInControl(roomId, socket.userId)) {
+        console.log('Server: Permission denied for changeVideo', { roomId, userId: socket.userId });
         return socket.emit('error', { message: 'Permission denied.' });
       }
       roomStates[roomId] = { status: 1, time: 0, lastUpdated: Date.now() };
@@ -18,7 +22,10 @@ module.exports = (io, socket, rooms) => {
         { $set: { videoUrl: videoUrl }, $addToSet: { history: videoUrl } },
         { new: true }
       );
-      if (!room) return socket.emit('error', { message: 'Room not found.' });
+      if (!room) {
+        console.log('Server: Room not found for changeVideo', { roomId });
+        return socket.emit('error', { message: 'Room not found.' });
+      }
       io.to(roomId).emit('historyUpdate', { history: room.history });
       io.to(roomId).emit('videoUpdate', { videoUrl: room.videoUrl });
     } catch (err) {
@@ -29,7 +36,9 @@ module.exports = (io, socket, rooms) => {
 
   const addToPlaylist = async ({ roomId, videoUrl }) => {
     try {
+      console.log('Server: addToPlaylist', { roomId, videoUrl }); // Debug log
       if (!rooms[roomId] || !rooms[roomId][socket.userId]) {
+        console.log('Server: User not in room for addToPlaylist', { roomId, userId: socket.userId });
         return socket.emit('error', { message: 'You must be in the room to add to the playlist.' });
       }
       const room = await Room.findOneAndUpdate(
@@ -37,7 +46,10 @@ module.exports = (io, socket, rooms) => {
         { $addToSet: { queue: videoUrl } },
         { new: true }
       );
-      if (!room) return socket.emit('error', { message: 'Room not found.' });
+      if (!room) {
+        console.log('Server: Room not found for addToPlaylist', { roomId });
+        return socket.emit('error', { message: 'Room not found.' });
+      }
       io.to(roomId).emit('playlistUpdate', { playlist: room.queue });
     } catch (err) {
       console.error('Error adding to playlist:', err);
@@ -47,9 +59,14 @@ module.exports = (io, socket, rooms) => {
 
   const playNextInQueue = async ({ roomId, mode }) => {
     try {
+      console.log('Server: playNextInQueue', { roomId, mode }); // Debug log
       let room = await Room.findOne({ roomId });
-      if (!room) return socket.emit('error', { message: 'Room not found.' });
+      if (!room) {
+        console.log('Server: Room not found for playNextInQueue', { roomId });
+        return socket.emit('error', { message: 'Room not found.' });
+      }
       if (!isUserInControl(roomId, socket.userId)) {
+        console.log('Server: Permission denied for playNextInQueue', { roomId, userId: socket.userId });
         return socket.emit('error', { message: 'Only the host or a moderator can control autoplay.' });
       }
       if (room.queue.length === 0) return;
@@ -84,7 +101,6 @@ module.exports = (io, socket, rooms) => {
   };
 
   const handlePlayerStateChange = ({ roomId, state }) => {
-    // [DEBUG] Log 1: Confirms the server received the event.
     console.log(`SERVER: Received playerStateChange from socket ${socket.id} for room ${roomId}`, state);
     
     if (isUserInControl(roomId, socket.userId)) {
@@ -93,20 +109,19 @@ module.exports = (io, socket, rooms) => {
         time: state.time ?? 0,
         lastUpdated: Date.now(),
       };
-
-      // [DEBUG] Log 2: Confirms the server is broadcasting the new state.
       console.log(`SERVER: Broadcasting syncPlayerState to room ${roomId}`, roomStates[roomId]);
       io.to(roomId).emit('syncPlayerState', roomStates[roomId]);
     } else {
-      // [DEBUG] Log 3: Fires if the user does not have permission.
       console.warn(`SERVER: Permission denied for playerStateChange from ${socket.id} in room ${roomId}`);
     }
   };
 
   const handleRequestInitialState = async ({ roomId }) => {
     try {
+      console.log('Server: handleRequestInitialState', { roomId }); // Debug log
       const room = await Room.findOne({ roomId }).lean();
       if (!room) {
+        console.log('Server: Room not found for handleRequestInitialState', { roomId });
         return socket.emit('error', { message: 'Room not found during initial state request.' });
       }
 
@@ -125,10 +140,76 @@ module.exports = (io, socket, rooms) => {
     }
   };
 
-  // --- Register all event listeners ---
+  const removePlaylistItem = async ({ roomId, videoUrl }) => {
+    try {
+      console.log('Server: removePlaylistItem', { roomId, videoUrl }); // Debug log
+      if (!isUserInControl(roomId, socket.userId)) {
+        console.log('Server: Permission denied for removePlaylistItem', { roomId, userId: socket.userId });
+        return socket.emit('error', { message: 'Permission denied.' });
+      }
+      const room = await Room.findOneAndUpdate(
+        { roomId },
+        { $pull: { queue: videoUrl } },
+        { new: true }
+      );
+      if (!room) {
+        console.log('Server: Room not found for removePlaylistItem', { roomId });
+        return socket.emit('error', { message: 'Room not found.' });
+      }
+      console.log('Server: Emitting playlistUpdate', { roomId, playlist: room.queue }); // Debug log
+      io.to(roomId).emit('playlistUpdate', { playlist: room.queue });
+    } catch (err) {
+      console.error('Error removing from playlist:', err);
+      socket.emit('error', { message: 'Failed to remove video from playlist.' });
+    }
+  };
+
+  const movePlaylistItem = async ({ roomId, videoUrl, direction }) => {
+    try {
+      console.log('Server: movePlaylistItem', { roomId, videoUrl, direction }); // Debug log
+      if (!isUserInControl(roomId, socket.userId)) {
+        console.log('Server: Permission denied for movePlaylistItem', { roomId, userId: socket.userId });
+        return socket.emit('error', { message: 'Permission denied.' });
+      }
+      const room = await Room.findOne({ roomId });
+      if (!room) {
+        console.log('Server: Room not found for movePlaylistItem', { roomId });
+        return socket.emit('error', { message: 'Room not found.' });
+      }
+      
+      const queue = room.queue;
+      const index = queue.indexOf(videoUrl);
+      
+      if (index === -1) {
+        console.log('Server: Video not found in queue', { roomId, videoUrl });
+        return socket.emit('error', { message: 'Video not found in playlist.' });
+      }
+
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+
+      if (newIndex < 0 || newIndex >= queue.length) {
+        console.log('Server: Invalid move operation', { roomId, videoUrl, direction, newIndex });
+        return socket.emit('error', { message: 'Invalid move operation.' });
+      }
+      
+      [queue[index], queue[newIndex]] = [queue[newIndex], queue[index]];
+      room.queue = queue;
+      await room.save();
+      
+      console.log('Server: Emitting playlistUpdate', { roomId, playlist: room.queue }); // Debug log
+      io.to(roomId).emit('playlistUpdate', { playlist: room.queue });
+    } catch (err) {
+      console.error('Error moving playlist item:', err);
+      socket.emit('error', { message: 'Failed to move playlist item.' });
+    }
+  };
+
+  // Register all event listeners
   socket.on('changeVideo', changeVideo);
   socket.on('addToPlaylist', addToPlaylist);
   socket.on('playNextInQueue', playNextInQueue);
   socket.on('playerStateChange', handlePlayerStateChange);
   socket.on('requestInitialState', handleRequestInitialState);
+  socket.on('removePlaylistItem', removePlaylistItem);
+  socket.on('movePlaylistItem', movePlaylistItem);
 };

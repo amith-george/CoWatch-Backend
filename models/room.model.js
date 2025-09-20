@@ -70,4 +70,12 @@ const roomSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
+// Add the initial videoURL to history array
+roomSchema.pre('save', function(next) {
+  if (this.isNew && this.history.length === 0) {
+    this.history.push(this.videoUrl);
+  }
+  next();
+});
+
 module.exports = mongoose.model('Room', roomSchema);
