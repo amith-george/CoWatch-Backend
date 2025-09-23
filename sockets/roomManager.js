@@ -20,6 +20,7 @@ function handleUserLeave(io, socket, roomId, userId) {
         userId: uid,
         username: userData.username,
         role: userData.role,
+        socketId: userData.socketId, // ✨ ADD THIS LINE
       }));
       
       io.to(roomId).emit('userLeft', { userId, username });
@@ -28,27 +29,25 @@ function handleUserLeave(io, socket, roomId, userId) {
   }
 }
 
-// --- NEW FUNCTION ---
-// Checks if a user has permission to control the player.
 function isUserInControl(roomId, userId) {
   const room = rooms[roomId];
   if (!room) return false;
 
-  const hostId = Object.keys(room).find(uid => room[uid].role === 'Host');
-
-  // If the host is in the room, only they have control.
-  if (hostId) {
-    return userId === hostId;
-  }
-
-  // If the host is NOT in the room, any moderator has control.
   const user = room[userId];
-  return user && user.role === 'Moderator';
-}
+  if (!user) return false;
 
+  // Host always has control
+  if (user.role === 'Host') return true;
+
+  // Moderators have control ONLY if the host is not present in the room
+  const hostIsPresent = Object.values(room).some(u => u.role === 'Host');
+  if (!hostIsPresent && user.role === 'Moderator') return true;
+
+  return false;
+}
 
 module.exports = {
   rooms,
   handleUserLeave,
-  isUserInControl, // Export the new function
+  isUserInControl,
 };

@@ -5,6 +5,7 @@ const registerConnectionHandlers = require('./handlers/connectionHandler');
 const registerChatHandlers = require('./handlers/chatHandler');
 const registerModerationHandlers = require('./handlers/moderationHandler');
 const registerVideoHandlers = require('./handlers/videoHandler');
+const registerScreenShareHandlers = require('./handlers/screenShareHandler');
 
 function initRoomSocket(io) {
   io.on('connection', (socket) => {
@@ -15,6 +16,7 @@ function initRoomSocket(io) {
     registerChatHandlers(io, socket, rooms);
     registerModerationHandlers(io, socket, rooms);
     registerVideoHandlers(io, socket, rooms);
+    registerScreenShareHandlers(io, socket, rooms);
   });
 }
 

@@ -21,15 +21,29 @@ module.exports = (io, socket, rooms) => {
 
       console.log(`${username} (${role}) joined room: ${roomId}`);
 
-      const members = Object.entries(rooms[roomId]).map(([uid, data]) => ({
-        userId: uid,
-        username: data.username,
-        role: data.role,
-      }));
+      // --- NEW LOGIC FOR LATE JOINERS ---
+      const activeSharerId = rooms[roomId].screenSharerSocketId;
+      if (activeSharerId && activeSharerId !== socket.id) {
+        // 1. Tell the new user a share is already in progress
+        io.to(socket.id).emit('screenShareStarted', { sharerId: activeSharerId });
+        // 2. Tell the original sharer to create a new peer connection for the new user
+        io.to(activeSharerId).emit('initiate-webrtc-peer', { newPeerSocketId: socket.id });
+      }
+      // --- END OF NEW LOGIC ---
+
+      const members = Object.entries(rooms[roomId])
+        // Filter out our internal tracking property before sending to clients
+        .filter(([key]) => key !== 'screenSharerSocketId')
+        .map(([uid, data]) => ({
+          userId: uid,
+          username: data.username,
+          role: data.role,
+          socketId: data.socketId,
+        }));
 
       io.to(roomId).emit('userJoined', { userId, username, role });
       io.to(roomId).emit('membersUpdate', { members });
-    } catch (error) {
+    } catch (error)      {
       console.error('Error in joinRoom:', error);
       socket.emit('error', { message: 'Failed to join room' });
     }
@@ -51,23 +65,19 @@ module.exports = (io, socket, rooms) => {
     }
   };
 
-  // ✨ ADD THIS NEW HANDLER
   const handleUpdateUsername = async ({ roomId, userId, newUsername }) => {
     try {
       const trimmedNewUsername = newUsername.trim();
       
-      // 1. Basic Validation
       if (!trimmedNewUsername || trimmedNewUsername.length < 2 || trimmedNewUsername.length > 20) {
         return socket.emit('error', { message: 'Username must be between 2 and 20 characters.' });
       }
 
-      // 2. Database Fetch
       const room = await Room.findOne({ roomId });
       if (!room) {
         return socket.emit('error', { message: 'Room not found.' });
       }
 
-      // 3. Uniqueness Check (case-insensitive)
       const isTaken =
         (room.host.userId !== userId && room.host.username.toLowerCase() === trimmedNewUsername.toLowerCase()) ||
         room.moderators.some(m => m.userId !== userId && m.username.toLowerCase() === trimmedNewUsername.toLowerCase()) ||
@@ -77,7 +87,6 @@ module.exports = (io, socket, rooms) => {
         return socket.emit('error', { message: 'This username is already taken in the room.' });
       }
 
-      // 4. Database Update
       let userFoundAndUpdated = false;
       if (room.host.userId === userId) {
         room.host.username = trimmedNewUsername;
@@ -101,7 +110,6 @@ module.exports = (io, socket, rooms) => {
       }
       await room.save();
 
-      // 5. In-Memory State Update
       if (rooms[roomId] && rooms[roomId][userId]) {
         rooms[roomId][userId].username = trimmedNewUsername;
       } else {
@@ -109,12 +117,14 @@ module.exports = (io, socket, rooms) => {
         return;
       }
 
-      // 6. Broadcast the updated member list to all clients
-      const members = Object.entries(rooms[roomId]).map(([uid, data]) => ({
-        userId: uid,
-        username: data.username,
-        role: data.role,
-      }));
+      const members = Object.entries(rooms[roomId])
+        .filter(([key]) => key !== 'screenSharerSocketId')
+        .map(([uid, data]) => ({
+            userId: uid,
+            username: data.username,
+            role: data.role,
+            socketId: data.socketId,
+        }));
       io.to(roomId).emit('membersUpdate', { members });
       
       console.log(`User ${userId} in room ${roomId} changed name to ${trimmedNewUsername}`);
@@ -124,9 +134,58 @@ module.exports = (io, socket, rooms) => {
     }
   };
 
-  // Register all event listeners
+  const handleScreenShareRequest = ({ roomId }) => {
+    try {
+      if (!rooms[roomId] || !rooms[roomId][socket.userId]) {
+        return socket.emit('error', { message: 'You are not in this room.' });
+      }
+
+      const hostEntry = Object.entries(rooms[roomId]).find(([, data]) => data.role === 'Host');
+      if (!hostEntry) {
+        return socket.emit('error', { message: 'Could not find the host.' });
+      }
+      const [hostId, hostData] = hostEntry;
+
+      const requesterUsername = rooms[roomId][socket.userId].username;
+
+      io.to(hostData.socketId).emit('screenShareRequest', {
+        requesterId: socket.userId,
+        requesterUsername: requesterUsername,
+      });
+
+      console.log(`User ${requesterUsername} (${socket.userId}) is requesting to share screen in room ${roomId}.`);
+    } catch (error) {
+      console.error('Error in handleScreenShareRequest:', error);
+      socket.emit('error', { message: 'Failed to request screen share.' });
+    }
+  };
+
+  const handleScreenShareResponse = ({ roomId, requesterId, accepted }) => {
+    try {
+      if (!rooms[roomId] || !rooms[roomId][socket.userId] || rooms[roomId][socket.userId].role !== 'Host') {
+        return socket.emit('error', { message: 'Only the host can respond to screen share requests.' });
+      }
+
+      const requester = rooms[roomId][requesterId];
+      if (!requester) {
+        return socket.emit('error', { message: 'The requesting user could not be found.' });
+      }
+
+      io.to(requester.socketId).emit('screenSharePermission', {
+        granted: accepted,
+      });
+
+      console.log(`Host responded to screen share request from ${requester.username}. Accepted: ${accepted}`);
+    } catch (error) {
+      console.error('Error in handleScreenShareResponse:', error);
+      socket.emit('error', { message: 'Failed to respond to screen share request.' });
+    }
+  };
+
   socket.on('joinRoom', joinRoom);
   socket.on('leaveRoom', leaveRoom);
   socket.on('disconnect', disconnect);
-  socket.on('updateUsername', handleUpdateUsername); 
+  socket.on('updateUsername', handleUpdateUsername);
+  socket.on('screenShareRequest', handleScreenShareRequest);
+  socket.on('screenShareResponse', handleScreenShareResponse);
 };
