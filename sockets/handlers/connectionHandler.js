@@ -17,22 +17,20 @@ module.exports = (io, socket, rooms) => {
       if (!rooms[roomId]) rooms[roomId] = {};
       rooms[roomId][userId] = { username, role, socketId: socket.id };
 
+      // ✨ FIX: Store roomId and userId directly on the socket object.
+      // This allows for instant lookup on disconnect instead of looping.
       socket.userId = userId;
+      socket.roomId = roomId;
 
       console.log(`${username} (${role}) joined room: ${roomId}`);
 
-      // --- NEW LOGIC FOR LATE JOINERS ---
       const activeSharerId = rooms[roomId].screenSharerSocketId;
       if (activeSharerId && activeSharerId !== socket.id) {
-        // 1. Tell the new user a share is already in progress
         io.to(socket.id).emit('screenShareStarted', { sharerId: activeSharerId });
-        // 2. Tell the original sharer to create a new peer connection for the new user
         io.to(activeSharerId).emit('initiate-webrtc-peer', { newPeerSocketId: socket.id });
       }
-      // --- END OF NEW LOGIC ---
 
       const members = Object.entries(rooms[roomId])
-        // Filter out our internal tracking property before sending to clients
         .filter(([key]) => key !== 'screenSharerSocketId')
         .map(([uid, data]) => ({
           userId: uid,
@@ -55,13 +53,11 @@ module.exports = (io, socket, rooms) => {
 
   const disconnect = () => {
     console.log(`Socket disconnected: ${socket.id}`);
-    for (const roomId in rooms) {
-      const user = Object.entries(rooms[roomId]).find(([, data]) => data.socketId === socket.id);
-      if (user) {
-        const [userId] = user;
-        handleUserLeave(io, socket, roomId, userId);
-        break;
-      }
+    
+    // ✨ FIX: The inefficient loop is replaced with a direct lookup.
+    // We instantly know which room and user to remove.
+    if (socket.roomId && socket.userId) {
+      handleUserLeave(io, socket, socket.roomId, socket.userId);
     }
   };
 
