@@ -2,8 +2,6 @@
 
 A Node.js + Express backend powering **CoWatch**, a synchronized media viewing and collaboration platform. Handles **room management, chat, video sync events, and screen sharing signaling** with **Socket.IO**.
 
-Live API: https://cowatch-backend.onrender.com/ (to be updated after deployment)
-
 ---
 
 ## 📌 Description
