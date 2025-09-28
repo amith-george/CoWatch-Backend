@@ -1,6 +1,8 @@
+// models/controllers/message.controller.js
+
 const Message = require('../models/message.model');
-const { getQueuedMessages } = require('../tasks/messageQueue');
-// Save a message to the database
+
+// Save messages in a room
 exports.saveMessage = async (req, res) => {
   try {
     const { roomId, senderName, content } = req.body;
@@ -31,29 +33,16 @@ exports.getMessagesByRoom = async (req, res) => {
     if (!roomId) {
       return res.status(400).json({ message: 'roomId is required' });
     }
+    const storedMessages = await Message.find({ roomId }).sort({ sentAt: 1 }).lean();
 
-    const storedMessages = await Message.find({ roomId }).sort({ sentAt: 1 });
-    const queuedMessages = getQueuedMessages(roomId);
-
-    // Combine and map messages to the format the frontend expects
-    const combinedMessages = [...storedMessages, ...queuedMessages]
-      .sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt))
-      .map(msg => ({
-        // Use ._doc to get a plain object if msg is a Mongoose document
-        ...(msg._doc || msg), 
-        username: msg.senderName,
-        text: msg.content,
-        role: msg.senderRole, // <-- Map senderRole to role
-      }));
-
-    return res.status(200).json({ messages: combinedMessages });
+    return res.status(200).json({ messages: storedMessages });
   } catch (error) {
     console.error('Error fetching messages:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
 
-// Delete all messages for a room (useful when a room expires or is deleted)
+// Delete all messages for a room
 exports.deleteMessagesByRoom = async (req, res) => {
   try {
     const { roomId } = req.params;

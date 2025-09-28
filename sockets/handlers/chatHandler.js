@@ -1,28 +1,50 @@
 // sockets/handlers/chatHandler.js
 
-const { queueMessage } = require('../../tasks/messageQueue');
+// 🎯 1. Import the Mongoose model directly.
+const Message = require('../../models/message.model');
 
-// --- 1. Accept 'rooms' as an argument ---
+// 🎯 2. The 'saveMessage' function is now inside this file.
+async function saveMessage(messageData) {
+  try {
+    const savedMessage = await Message.create(messageData);
+    console.log(`✅ Saved message for room ${messageData.roomId}`);
+    return savedMessage;
+  } catch (err) {
+    console.error(`❌ Error saving message for room ${messageData.roomId}:`, err);
+    throw err;
+  }
+}
+
 module.exports = (io, socket, rooms) => {
-  const handleChatMessage = ({ roomId, text, username }) => {
+  const handleChatMessage = async ({ roomId, text, username, replyTo }) => {
     const sender = rooms[roomId]?.[socket.userId];
-    const role = sender ? sender.role : 'Participant'; // Fallback role
+    const role = sender ? sender.role : 'Participant';
 
     if (!sender) {
       console.warn(`Could not find user with socket.userId: ${socket.userId} in room: ${roomId}`);
+      return;
     }
     
-    const message = {
+    const messageData = {
       roomId,
       senderName: username,
-      senderRole: role, // <-- 3. Add the role to the message object
+      senderRole: role,
       content: text,
       sentAt: new Date(),
     };
 
-    queueMessage(roomId, message);
-    
-    io.to(roomId).emit('chatMessage', { username, text, role });
+    if (replyTo) {
+      messageData.replyTo = replyTo;
+    }
+
+    try {
+      // The function call remains the same.
+      const savedMessage = await saveMessage(messageData);
+      io.to(roomId).emit('chatMessage', savedMessage.toObject());
+    } catch (error) {
+      console.error('Failed to save and broadcast message:', error);
+      socket.emit('chatError', { message: 'Your message could not be sent.' });
+    }
   };
 
   socket.on('chatMessage', handleChatMessage);
