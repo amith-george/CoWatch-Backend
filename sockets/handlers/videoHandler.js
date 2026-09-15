@@ -19,7 +19,10 @@ module.exports = (io, socket, rooms) => {
 
       const room = await Room.findOneAndUpdate(
         { roomId },
-        { $set: { videoUrl: videoUrl }, $addToSet: { history: videoUrl } },
+        { 
+          $set: { videoUrl: videoUrl }, 
+          $push: { history: { $each: [videoUrl], $slice: -50 } } 
+        },
         { new: true }
       );
       if (!room) {
@@ -78,10 +81,10 @@ module.exports = (io, socket, rooms) => {
         nextVideoUrl = room.queue[0];
       }
       const updatedRoom = await Room.findOneAndUpdate(
-        { roomId },
+        { roomId, queue: nextVideoUrl },
         {
           $set: { videoUrl: nextVideoUrl },
-          $addToSet: { history: nextVideoUrl },
+          $push: { history: { $each: [nextVideoUrl], $slice: -50 } },
           $pull: { queue: nextVideoUrl },
         },
         { new: true }

@@ -4,7 +4,7 @@ const Message = require('../models/message.model');
 
 function startCleanupJob() {
   // ⏰ Runs every hour (at minute 0)
-  cron.schedule('*/1 * * * *', async () => {
+  cron.schedule('0 * * * *', async () => {
     try {
       const now = new Date();
       // Find all rooms that have expired
@@ -14,19 +14,16 @@ function startCleanupJob() {
         return;
       }
 
-      let deletedRoomsCount = 0;
-      let deletedMessagesCount = 0;
+      const expiredRoomIds = expiredRooms.map(r => r.roomId);
+      const expiredMongoIds = expiredRooms.map(r => r._id);
 
-      // Loop through each expired room
-      for (const room of expiredRooms) {
-        // First, delete all messages associated with the expired room
-        const result = await Message.deleteMany({ roomId: room.roomId });
-        deletedMessagesCount += result.deletedCount;
+      // First, delete all messages associated with the expired rooms
+      const messageResult = await Message.deleteMany({ roomId: { $in: expiredRoomIds } });
+      const deletedMessagesCount = messageResult.deletedCount || 0;
 
-        // Then, delete the room itself
-        await Room.findByIdAndDelete(room._id);
-        deletedRoomsCount++;
-      }
+      // Then, delete the rooms themselves
+      const roomResult = await Room.deleteMany({ _id: { $in: expiredMongoIds } });
+      const deletedRoomsCount = roomResult.deletedCount || 0;
 
       console.log(`✅ Deleted ${deletedRoomsCount} expired rooms and ${deletedMessagesCount} associated messages at ${now.toISOString()}`);
     } catch (err) {

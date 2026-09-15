@@ -121,7 +121,7 @@ module.exports = (io, socket, rooms) => {
             targetSocket.disconnect(true);
           }
   
-          handleUserLeave(socket, roomId, targetUserId, targetUser.username, io);
+          handleUserLeave(io, socket, roomId, targetUserId);
       
         } catch (error) {
           console.error('Error during kick:', error);
@@ -167,7 +167,7 @@ module.exports = (io, socket, rooms) => {
             targetSocket.disconnect(true);
           }
   
-          handleUserLeave(socket, roomId, targetUserId, targetUser.username, io);
+          handleUserLeave(io, socket, roomId, targetUserId);
           
         } catch (error) {
           console.error('Error during ban:', error);

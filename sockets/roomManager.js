@@ -4,6 +4,13 @@ const rooms = {}; // { roomId: { userId: { username, role, socketId } } }
 
 function handleUserLeave(io, socket, roomId, userId) {
   if (rooms[roomId] && rooms[roomId][userId]) {
+    // Only remove the user from memory if the disconnecting socket matches their current socket
+    if (rooms[roomId][userId].socketId !== socket.id) {
+      console.log(`Socket ${socket.id} disconnected, but user ${userId} has a newer active socket. Ignoring.`);
+      socket.leave(roomId);
+      return;
+    }
+
     const { username } = rooms[roomId][userId];
     delete rooms[roomId][userId];
 

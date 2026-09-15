@@ -78,4 +78,6 @@ roomSchema.pre('save', function(next) {
   next();
 });
 
+roomSchema.index({ expiresAt: 1 });
+
 module.exports = mongoose.model('Room', roomSchema);

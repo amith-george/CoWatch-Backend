@@ -93,8 +93,12 @@ exports.joinRoom = async (req, res) => {
     }
 
     // Check if username is already taken by another participant
-    const isTaken = room.participants.some(p => p.username.toLowerCase() === username.toLowerCase());
-    if (isTaken) {
+    const lowerUsername = username.toLowerCase();
+    const isTakenByHost = room.host.username.toLowerCase() === lowerUsername && room.host.userId !== userId;
+    const isTakenByMod = room.moderators.some(m => m.username.toLowerCase() === lowerUsername && m.userId !== userId);
+    const isTakenByPart = room.participants.some(p => p.username.toLowerCase() === lowerUsername && p.userId !== userId);
+
+    if (isTakenByHost || isTakenByMod || isTakenByPart) {
       return res.status(409).json({ message: 'Username already taken in this room.' });
     }
 

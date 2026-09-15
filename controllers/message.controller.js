@@ -33,7 +33,12 @@ exports.getMessagesByRoom = async (req, res) => {
     if (!roomId) {
       return res.status(400).json({ message: 'roomId is required' });
     }
-    const storedMessages = await Message.find({ roomId }).sort({ sentAt: 1 }).lean();
+    const storedMessages = await Message.find({ roomId })
+      .sort({ sentAt: -1 })
+      .limit(100)
+      .lean();
+
+    storedMessages.reverse();
 
     return res.status(200).json({ messages: storedMessages });
   } catch (error) {

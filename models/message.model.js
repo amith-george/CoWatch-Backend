@@ -32,4 +32,6 @@ const messageSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+messageSchema.index({ roomId: 1, sentAt: -1 });
+
 module.exports = mongoose.model('Message', messageSchema);
