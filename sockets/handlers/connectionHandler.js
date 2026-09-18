@@ -85,26 +85,19 @@ module.exports = (io, socket, rooms) => {
 
       let userFoundAndUpdated = false;
       if (room.host.userId === userId) {
-        room.host.username = trimmedNewUsername;
+        await Room.updateOne({ roomId }, { $set: { "host.username": trimmedNewUsername } });
         userFoundAndUpdated = true;
-      } else {
-        const modIndex = room.moderators.findIndex(m => m.userId === userId);
-        if (modIndex > -1) {
-          room.moderators[modIndex].username = trimmedNewUsername;
-          userFoundAndUpdated = true;
-        } else {
-          const participantIndex = room.participants.findIndex(p => p.userId === userId);
-          if (participantIndex > -1) {
-            room.participants[participantIndex].username = trimmedNewUsername;
-            userFoundAndUpdated = true;
-          }
-        }
+      } else if (room.moderators.some(m => m.userId === userId)) {
+        await Room.updateOne({ roomId, "moderators.userId": userId }, { $set: { "moderators.$.username": trimmedNewUsername } });
+        userFoundAndUpdated = true;
+      } else if (room.participants.some(p => p.userId === userId)) {
+        await Room.updateOne({ roomId, "participants.userId": userId }, { $set: { "participants.$.username": trimmedNewUsername } });
+        userFoundAndUpdated = true;
       }
       
       if (!userFoundAndUpdated) {
         return socket.emit('error', { message: 'User not found in this room.' });
       }
-      await room.save();
 
       if (rooms[roomId] && rooms[roomId][userId]) {
         rooms[roomId][userId].username = trimmedNewUsername;

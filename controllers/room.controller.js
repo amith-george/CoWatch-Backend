@@ -102,10 +102,14 @@ exports.joinRoom = async (req, res) => {
       return res.status(409).json({ message: 'Username already taken in this room.' });
     }
 
-    // Add the user to the participants array using $addToSet to prevent duplicates
+    // Remove any stale entries for this userId first, then push the fresh one to prevent duplicates
     await Room.updateOne(
       { roomId },
-      { $addToSet: { participants: { userId, username } } }
+      { $pull: { participants: { userId } } }
+    );
+    await Room.updateOne(
+      { roomId },
+      { $push: { participants: { userId, username } } }
     );
 
     return res.status(200).json({

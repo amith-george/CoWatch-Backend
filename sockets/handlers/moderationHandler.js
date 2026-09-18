@@ -27,9 +27,13 @@ module.exports = (io, socket, rooms) => {
             return socket.emit('error', { message: 'User not found or is not a participant.' });
           }
   
-          roomInDb.moderators.push(participant);
-          roomInDb.participants = roomInDb.participants.filter(p => p.userId !== targetUserId);
-          await roomInDb.save();
+          await Room.updateOne(
+            { roomId },
+            {
+              $push: { moderators: participant },
+              $pull: { participants: { userId: targetUserId } }
+            }
+          );
   
           if (rooms[roomId][targetUserId]) {
             rooms[roomId][targetUserId].role = 'Moderator';
@@ -79,9 +83,13 @@ module.exports = (io, socket, rooms) => {
             return socket.emit('error', { message: 'User is not a moderator.' });
           }
   
-          room.moderators = room.moderators.filter(m => m.userId !== targetUserId);
-          room.participants.push(moderatorToDemote);
-          await room.save();
+          await Room.updateOne(
+            { roomId },
+            {
+              $push: { participants: moderatorToDemote },
+              $pull: { moderators: { userId: targetUserId } }
+            }
+          );
           
           if (rooms[roomId][targetUserId]) {
             rooms[roomId][targetUserId].role = 'Participant';

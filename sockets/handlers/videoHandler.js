@@ -46,7 +46,7 @@ module.exports = (io, socket, rooms) => {
       }
       const room = await Room.findOneAndUpdate(
         { roomId },
-        { $addToSet: { queue: videoUrl } },
+        { $push: { queue: videoUrl } },
         { new: true }
       );
       if (!room) {
@@ -73,22 +73,21 @@ module.exports = (io, socket, rooms) => {
         return socket.emit('error', { message: 'Only the host or a moderator can control autoplay.' });
       }
       if (room.queue.length === 0) return;
-      let nextVideoUrl;
+      let nextVideoIndex = 0;
       if (mode === 'shuffle' && room.queue.length > 1) {
-        const randomIndex = Math.floor(Math.random() * room.queue.length);
-        nextVideoUrl = room.queue[randomIndex];
-      } else {
-        nextVideoUrl = room.queue[0];
+        nextVideoIndex = Math.floor(Math.random() * room.queue.length);
       }
-      const updatedRoom = await Room.findOneAndUpdate(
-        { roomId, queue: nextVideoUrl },
-        {
-          $set: { videoUrl: nextVideoUrl },
-          $push: { history: { $each: [nextVideoUrl], $slice: -50 } },
-          $pull: { queue: nextVideoUrl },
-        },
-        { new: true }
-      );
+      
+      const nextVideoUrl = room.queue[nextVideoIndex];
+      room.queue.splice(nextVideoIndex, 1);
+      
+      room.videoUrl = nextVideoUrl;
+      room.history.push(nextVideoUrl);
+      if (room.history.length > 50) room.history = room.history.slice(-50);
+      
+      room.markModified('queue');
+      const updatedRoom = await room.save();
+      
       if (!updatedRoom) return;
 
       roomStates[roomId] = { status: 1, time: 0, lastUpdated: Date.now() };
@@ -197,6 +196,7 @@ module.exports = (io, socket, rooms) => {
       
       [queue[index], queue[newIndex]] = [queue[newIndex], queue[index]];
       room.queue = queue;
+      room.markModified('queue');
       await room.save();
       
       console.log('Server: Emitting playlistUpdate', { roomId, playlist: room.queue }); // Debug log

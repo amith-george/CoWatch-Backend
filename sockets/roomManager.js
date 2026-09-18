@@ -43,12 +43,8 @@ function isUserInControl(roomId, userId) {
   const user = room[userId];
   if (!user) return false;
 
-  // Host always has control
-  if (user.role === 'Host') return true;
-
-  // Moderators have control ONLY if the host is not present in the room
-  const hostIsPresent = Object.values(room).some(u => u.role === 'Host');
-  if (!hostIsPresent && user.role === 'Moderator') return true;
+  // Host and Moderators always have control
+  if (user.role === 'Host' || user.role === 'Moderator') return true;
 
   return false;
 }
